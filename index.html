@@ -5,9 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>AI Dental Studio — Примерка улыбки</title>
 
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
-
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body {
@@ -39,7 +36,9 @@
             border: none; color: white; padding: 18px 50px; border-radius: 35px;
             font-size: 17px; font-weight: 700; cursor: pointer;
             box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
+            transition: transform 0.2s;
         }
+        .btn-primary:active { transform: scale(0.95); }
 
         #camera-screen { background: #000; }
         #webcam { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
@@ -49,12 +48,12 @@
             pointer-events: none;
         }
         .guide-box { width: 260px; height: 330px; border: 2px dashed rgba(255,255,255,0.4); border-radius: 50%; margin-top: 20px; }
-        .guide-box.active { border-color: #22c55e; box-shadow: 0 0 35px rgba(34, 197, 94, 0.35); }
         .snap-btn {
             width: 80px; height: 80px; border-radius: 50%; background: white;
             border: 6px solid rgba(255,255,255,0.3); cursor: pointer; pointer-events: auto;
+            transition: transform 0.2s;
         }
-        .snap-btn:disabled { opacity: 0.3; }
+        .snap-btn:active { transform: scale(0.9); }
 
         #processing { background: #08080c; text-align: center; padding: 25px; }
         .ai-loader {
@@ -65,10 +64,11 @@
 
         #result { background: #08080c; padding: 20px; }
         .compare-box {
-            position: relative; width: 340px; height: 340px; border-radius: 20px;
+            position: relative; width: 330px; height: 330px; border-radius: 20px;
             overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.8); touch-action: none;
+            border: 1px solid rgba(255,255,255,0.1);
         }
-        .compare-box img, .compare-box canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+        .compare-box canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
         #canvas-after { clip-path: inset(0 0 0 50%); }
         .slider-line { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; background: white; transform: translateX(-50%); z-index: 10; }
         .slider-button {
@@ -89,24 +89,24 @@
 
     <div class="screen active" id="welcome">
         <div class="hero-icon">🦷</div>
-        <div class="hero-title">AI Dental Studio</div>
-        <div class="hero-desc">Генерация идеальной улыбки и виниров с помощью серверной нейросети Stable Diffusion</div>
+        <div class="hero-title">AI Smile Studio</div>
+        <div class="hero-desc">Генерация идеальной анатомической улыбки с помощью серверной нейросети FLUX</div>
         <button class="btn-primary" onclick="startCamera()">Сделать фото</button>
     </div>
 
     <div class="screen" id="camera-screen">
         <video id="webcam" autoplay playsinline muted></video>
         <div class="camera-overlay">
-            <div style="background: rgba(0,0,0,0.7); padding: 8px 18px; border-radius: 20px; font-size: 14px;" id="status-hint">Улыбнитесь в камеру 😊</div>
-            <div class="guide-box" id="guide-box"></div>
-            <button class="snap-btn" id="snap-btn" onclick="captureAndSend()" disabled></button>
+            <div style="background: rgba(0,0,0,0.7); padding: 8px 18px; border-radius: 20px; font-size: 14px;">Улыбнитесь в камеру 😊</div>
+            <div class="guide-box"></div>
+            <button class="snap-btn" onclick="captureAndSend()"></button>
         </div>
     </div>
 
     <div class="screen" id="processing">
         <div class="ai-loader"></div>
-        <div style="font-size: 19px; font-weight: bold; margin-bottom: 8px;">Серверная нейросеть генерирует зубы...</div>
-        <div style="font-size: 13px; color: #94a3b8; max-width: 290px;" id="ai-status">Моделирование анатомических виниров...</div>
+        <div style="font-size: 19px; font-weight: bold; margin-bottom: 8px;">Нейросеть FLUX генерирует зубы...</div>
+        <div style="font-size: 13px; color: #94a3b8; max-width: 290px;" id="ai-status">Моделирование анатомических виниров E.max...</div>
     </div>
 
     <div class="screen" id="result">
@@ -126,8 +126,6 @@
 
     <script>
         const video = document.getElementById('webcam');
-        let faceMesh = null;
-        let lastLandmarks = null;
         let cameraStream = null;
 
         function showScreen(id) {
@@ -137,47 +135,19 @@
 
         async function startCamera() {
             showScreen('camera-screen');
-            cameraStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } }
-            });
-            video.srcObject = cameraStream;
-            await video.play();
-
-            faceMesh = new FaceMesh({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-            });
-            faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
-            faceMesh.onResults(onFaceTracking);
-
-            const cam = new Camera(video, {
-                onFrame: async () => { await faceMesh.send({ image: video }); },
-                width: 640, height: 480
-            });
-            cam.start();
-        }
-
-        function onFaceTracking(results) {
-            const guide = document.getElementById('guide-box');
-            const snapBtn = document.getElementById('snap-btn');
-            const hint = document.getElementById('status-hint');
-
-            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-                lastLandmarks = results.multiFaceLandmarks[0];
-                guide.classList.add('active');
-                snapBtn.disabled = false;
-                hint.innerText = "Отлично! Сделайте снимок 📸";
-            } else {
-                lastLandmarks = null;
-                guide.classList.remove('active');
-                snapBtn.disabled = true;
-                hint.innerText = "Поместите лицо в центр";
+            try {
+                cameraStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } }
+                });
+                video.srcObject = cameraStream;
+                await video.play();
+            } catch (e) {
+                alert('Пожалуйста, разрешите доступ к камере.');
+                showScreen('welcome');
             }
         }
 
         async function captureAndSend() {
-            if (!lastLandmarks) return;
-
-            // 1. Создаем фото 512x512
             const snapCanvas = document.createElement('canvas');
             snapCanvas.width = 512;
             snapCanvas.height = 512;
@@ -190,43 +160,23 @@
             const sy = (video.videoHeight - minDim) / 2;
             ctx.drawImage(video, sx, sy, minDim, minDim, 0, 0, 512, 512);
 
-            // 2. Создаем маску рта 512x512
-            const maskCanvas = document.createElement('canvas');
-            maskCanvas.width = 512;
-            maskCanvas.height = 512;
-            const mCtx = maskCanvas.getContext('2d');
-            mCtx.fillStyle = '#000000';
-            mCtx.fillRect(0, 0, 512, 512);
-
-            const mouthPoints = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
-            mCtx.fillStyle = '#ffffff';
-            mCtx.beginPath();
-            const p0 = lastLandmarks[mouthPoints[0]];
-            mCtx.moveTo((1 - p0.x) * 512, p0.y * 512);
-            for (let i = 1; i < mouthPoints.length; i++) {
-                const p = lastLandmarks[mouthPoints[i]];
-                mCtx.lineTo((1 - p.x) * 512, p.y * 512);
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(t => t.stop());
             }
-            mCtx.closePath();
-            mCtx.fill();
 
-            cameraStream.getTracks().forEach(t => t.stop());
             showScreen('processing');
 
             const imageBase64 = snapCanvas.toDataURL('image/jpeg', 0.95);
-            const maskBase64 = maskCanvas.toDataURL('image/png');
 
             try {
-                // Вызываем серверную функцию Vercel
                 const res = await fetch('/api/makeover', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: imageBase64, mask: maskBase64 })
+                    body: JSON.stringify({ image: imageBase64 })
                 });
 
                 if (!res.ok) {
-                    const err = await res.json().catch(() => ({ error: 'Ошибка сервера' }));
-                    throw new Error(err.error || 'Ошибка генерации');
+                    throw new Error('Сбой обработки');
                 }
 
                 const resBlob = await res.blob();
@@ -236,6 +186,7 @@
 
                 renderResult(snapCanvas, img);
             } catch (err) {
+                console.error(err);
                 alert("Ошибка: " + err.message);
                 restart();
             }
