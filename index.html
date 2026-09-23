@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AI Dental Studio — Примерка улыбки</title>
+    <title>AI Dental Studio — Генерация улыбки</title>
 
-    <!-- MediaPipe FaceMesh для поиска анатомических точек рта -->
+    <!-- MediaPipe FaceMesh для построения маски рта -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
@@ -25,19 +25,12 @@
         }
         .screen.active { display: flex; }
 
-        /* Экран 1: Приветствие */
+        /* Экран 1: Старт */
         #welcome {
             background: radial-gradient(circle at center, #1e1b4b 0%, #08080c 80%);
             text-align: center; padding: 30px;
         }
-        .hero-icon {
-            font-size: 70px; margin-bottom: 20px;
-            animation: float 3s ease-in-out infinite;
-        }
-        @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
-        }
+        .hero-icon { font-size: 70px; margin-bottom: 20px; }
         .hero-title {
             font-size: 32px; font-weight: 800;
             background: linear-gradient(135deg, #38bdf8, #818cf8, #c084fc);
@@ -48,7 +41,6 @@
             font-size: 15px; color: #94a3b8; max-width: 320px;
             line-height: 1.6; margin-bottom: 40px;
         }
-        
         .btn-primary {
             background: linear-gradient(135deg, #0284c7, #6366f1);
             border: none; color: white; padding: 18px 50px; border-radius: 35px;
@@ -100,8 +92,8 @@
         /* Экран 4: Слайдер До/После */
         #result { background: #08080c; padding: 20px; }
         .compare-box {
-            position: relative; width: 320px; height: 420px;
-            border-radius: 22px; overflow: hidden;
+            position: relative; width: 340px; height: 340px;
+            border-radius: 20px; overflow: hidden;
             box-shadow: 0 10px 40px rgba(0,0,0,0.8);
             touch-action: none;
             border: 1px solid rgba(255,255,255,0.1);
@@ -149,7 +141,7 @@
         <div class="hero-icon">🦷</div>
         <div class="hero-title">AI Smile Studio</div>
         <div class="hero-desc">
-            Генерация идеальной улыбки и анатомических виниров за 3 секунды
+            Генерация анатомически идеальной улыбки с помощью нейросети Stable Diffusion
         </div>
         <button class="btn-primary" onclick="startCamera()">Сделать фото</button>
     </div>
@@ -164,18 +156,18 @@
         </div>
     </div>
 
-    <!-- ЭКРАН 3: ОБРАБОТКА -->
+    <!-- ЭКРАН 3: ЗАГРУЗКА -->
     <div class="screen" id="processing">
         <div class="ai-loader"></div>
-        <div style="font-size: 19px; font-weight: bold; margin-bottom: 8px;">Моделирование улыбки...</div>
+        <div style="font-size: 19px; font-weight: bold; margin-bottom: 8px;">Нейросеть генерирует зубы...</div>
         <div style="font-size: 13px; color: #94a3b8; max-width: 290px; line-height: 1.5;" id="ai-status">
-            Построение анатомической дуги и подбор цвета BL1...
+            Подключение к AI серверу Hugging Face...
         </div>
     </div>
 
     <!-- ЭКРАН 4: РЕЗУЛЬТАТ -->
     <div class="screen" id="result">
-        <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px;">Результат моделирования</div>
+        <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px;">Результат генерации AI</div>
         
         <div class="compare-box" id="compare-box">
             <canvas id="canvas-before"></canvas>
@@ -216,7 +208,7 @@
                 video.srcObject = cameraStream;
                 await video.play();
             } catch (e) {
-                alert('Пожалуйста, разрешите доступ к камере в браузере.');
+                alert('Пожалуйста, разрешите доступ к камере.');
                 showScreen('welcome');
                 return;
             }
@@ -257,16 +249,25 @@
         async function captureAndGenerate() {
             if (!lastLandmarks) return;
 
-            // 1. Делаем снимок оригинала в высоком разрешении
+            // 1. Создаем стандартизированное фото 512x512 для Stable Diffusion
+            const AI_SIZE = 512;
             const snapCanvas = document.createElement('canvas');
-            snapCanvas.width = video.videoWidth;
-            snapCanvas.height = video.videoHeight;
+            snapCanvas.width = AI_SIZE;
+            snapCanvas.height = AI_SIZE;
             const ctx = snapCanvas.getContext('2d');
-            
-            // Зеркалим снимок в нормальный вид
-            ctx.translate(snapCanvas.width, 0);
+
+            // Зеркалим изображение и кадрируем строго по центру
+            ctx.translate(AI_SIZE, 0);
             ctx.scale(-1, 1);
-            ctx.drawImage(video, 0, 0);
+
+            const minDim = Math.min(video.videoWidth, video.videoHeight);
+            const sx = (video.videoWidth - minDim) / 2;
+            const sy = (video.videoHeight - minDim) / 2;
+
+            ctx.drawImage(video, sx, sy, minDim, minDim, 0, 0, AI_SIZE, AI_SIZE);
+
+            // 2. Создаем точную маску рта 512x512
+            const maskCanvas = generateMask512(AI_SIZE, AI_SIZE, lastLandmarks);
 
             // Останавливаем камеру
             if (cameraStream) {
@@ -275,201 +276,126 @@
 
             showScreen('processing');
 
-            // 2. Запускаем моделирование улыбки
+            // 3. Отправляем в Hugging Face Stable Diffusion
             try {
-                // Сначала пытаемся через серверный AI, если сервер сбоит — мгновенно включаем Pro Synthesis
-                let afterCanvas = null;
-                try {
-                    afterCanvas = await tryServerAI(snapCanvas, lastLandmarks);
-                } catch (e) {
-                    console.log("Сервер занят, запускаем локальный движок генерации виниров:", e);
-                    afterCanvas = generateProVeneers(snapCanvas, lastLandmarks);
-                }
-
-                renderResult(snapCanvas, afterCanvas);
+                const aiResultImage = await callHuggingFaceAI(snapCanvas, maskCanvas);
+                renderResult(snapCanvas, aiResultImage);
             } catch (err) {
                 console.error(err);
-                alert("Ошибка: " + err.message);
+                alert("Ошибка нейросети: " + err.message);
                 restart();
             }
         }
 
-        // Попытка генерации через Hugging Face
-        async function tryServerAI(photoCanvas, landmarks) {
+        // Построение маски 512x512
+        function generateMask512(width, height, landmarks) {
             const maskCanvas = document.createElement('canvas');
-            maskCanvas.width = photoCanvas.width;
-            maskCanvas.height = photoCanvas.height;
+            maskCanvas.width = width;
+            maskCanvas.height = height;
             const mCtx = maskCanvas.getContext('2d');
 
-            mCtx.fillStyle = '#000';
-            mCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+            // Черный фон = исходное лицо не изменяется
+            mCtx.fillStyle = '#000000';
+            mCtx.fillRect(0, 0, width, height);
 
-            const innerLips = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
-            mCtx.fillStyle = '#fff';
+            // Точки рта
+            const mouthPoints = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
+
+            // Белая область = место, где нейросеть сгенерирует новые зубы
+            mCtx.fillStyle = '#ffffff';
             mCtx.beginPath();
-            mCtx.moveTo((1 - landmarks[innerLips[0]].x) * maskCanvas.width, landmarks[innerLips[0]].y * maskCanvas.height);
-            for (let i = 1; i < innerLips.length; i++) {
-                mCtx.lineTo((1 - landmarks[innerLips[i]].x) * maskCanvas.width, landmarks[innerLips[i]].y * maskCanvas.height);
+            const p0 = landmarks[mouthPoints[0]];
+            mCtx.moveTo((1 - p0.x) * width, p0.y * height);
+
+            for (let i = 1; i < mouthPoints.length; i++) {
+                const p = landmarks[mouthPoints[i]];
+                mCtx.lineTo((1 - p.x) * width, p.y * height);
             }
             mCtx.closePath();
             mCtx.fill();
 
-            // Преобразуем в Blob
-            const photoBlob = await new Promise(r => photoCanvas.toBlob(r, 'image/jpeg', 0.9));
-            const maskBlob = await new Promise(r => maskCanvas.toBlob(r, 'image/png'));
+            // Легкое размытие для идеальной бесшовности на губах
+            mCtx.filter = 'blur(4px)';
+            mCtx.drawImage(maskCanvas, 0, 0);
 
-            const formData = new FormData();
-            formData.append('image', photoBlob);
-            formData.append('mask_image', maskBlob);
-            formData.append('prompt', 'perfect straight white teeth, natural dental anatomy, beautiful smile, hollywood veneers, highly detailed 8k');
-
-            const response = await fetch("https://api-inference.huggingface.co/models/runwayml/stable-diffusion-inpainting", {
-                headers: { "Authorization": `Bearer ${HF_TOKEN}` },
-                method: "POST",
-                body: formData
-            });
-
-            if (!response.ok) throw new Error("HF Busy");
-            const resBlob = await response.blob();
-            const img = new Image();
-            img.src = URL.createObjectURL(resBlob);
-            await img.decode();
-            return img;
+            return maskCanvas;
         }
 
-        // ДВИЖОК ПРОФЕССИОНАЛЬНОГО МОДЕЛИРОВАНИЯ ВИНИРОВ (PRO DENTAL SYNTHESIS)
-        // Строит анатомически ровный зубной ряд по правилу Золотого сечения
-        function generateProVeneers(photoCanvas, landmarks) {
-            const width = photoCanvas.width;
-            const height = photoCanvas.height;
+        // Запрос к Hugging Face API Inpainting
+        async function callHuggingFaceAI(photoCanvas, maskCanvas) {
+            const statusText = document.getElementById('ai-status');
 
-            const resCanvas = document.createElement('canvas');
-            resCanvas.width = width;
-            resCanvas.height = height;
-            const ctx = resCanvas.getContext('2d');
+            // Получаем чистый Base64 без префиксов data:image
+            const imageBase64 = photoCanvas.toDataURL('image/png').replace(/^data:image\/\w+;base64,/, "");
+            const maskBase64 = maskCanvas.toDataURL('image/png').replace(/^data:image\/\w+;base64,/, "");
 
-            // Копируем оригинал
-            ctx.drawImage(photoCanvas, 0, 0);
+            // Используем проверенную официальную модель SD 2 Inpainting
+            const MODEL_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-inpainting";
 
-            // Ключевые точки рта
-            const innerLips = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
-            
-            // Получаем координаты углов и центра
-            const leftCorner = { x: (1 - landmarks[78].x) * width, y: landmarks[78].y * height };
-            const rightCorner = { x: (1 - landmarks[308].x) * width, y: landmarks[308].y * height };
-            const topLipCenter = { x: (1 - landmarks[13].x) * width, y: landmarks[13].y * height };
-            const botLipCenter = { x: (1 - landmarks[14].x) * width, y: landmarks[14].y * height };
+            let attempts = 0;
+            const maxAttempts = 6;
 
-            const mouthWidth = Math.hypot(rightCorner.x - leftCorner.x, rightCorner.y - leftCorner.y);
-            const mouthHeight = Math.abs(botLipCenter.y - topLipCenter.y);
+            while (attempts < maxAttempts) {
+                attempts++;
+                statusText.innerText = `Генерация улыбки нейросетью (запрос ${attempts}/${maxAttempts})...`;
 
-            ctx.save();
+                const response = await fetch(MODEL_URL, {
+                    headers: {
+                        "Authorization": `Bearer ${HF_TOKEN}`,
+                        "Content-Type": "application/json"
+                    },
+                    method: "POST",
+                    body: JSON.stringify({
+                        inputs: {
+                            image: imageBase64,
+                            mask_image: maskBase64
+                        },
+                        parameters: {
+                            prompt: "perfect straight clean white teeth, beautiful smile, realistic natural dental anatomy, symmetrical veneers, dental photography, 8k uhd",
+                            negative_prompt: "missing teeth, empty mouth, dark mouth, crooked teeth, yellow teeth, deformed, ugly, bad anatomy, cartoon, blurry",
+                            guidance_scale: 8.0
+                        }
+                    })
+                });
 
-            // Маска рта (чтобы виниры не вылезали за пределы губ)
-            ctx.beginPath();
-            ctx.moveTo((1 - landmarks[innerLips[0]].x) * width, landmarks[innerLips[0]].y * height);
-            for (let i = 1; i < innerLips.length; i++) {
-                ctx.lineTo((1 - landmarks[innerLips[i]].x) * width, landmarks[innerLips[i]].y * height);
-            }
-            ctx.closePath();
-            ctx.clip();
+                // Если сервер спит (холодный старт)
+                if (response.status === 503) {
+                    const data = await response.json();
+                    const waitTime = Math.round(data.estimated_time || 15);
+                    statusText.innerText = `AI-сервер просыпается... Ждем ${waitTime} сек.`;
+                    await new Promise(r => setTimeout(r, waitTime * 1000));
+                    continue;
+                }
 
-            // Затемняем глубину рта (buccal corridor)
-            ctx.fillStyle = "rgba(20, 5, 5, 0.85)";
-            ctx.fill();
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({ error: response.statusText }));
+                    throw new Error(err.error || `Ошибка сервера (${response.status})`);
+                }
 
-            // Генерация 8 анатомических зубов (виниры 1.4 - 2.4)
-            // Пропорции ширины по Золотому сечению: 1.4 (0.6), 1.3 (0.8), 1.2 (1.0), 1.1 (1.6) | 2.1 (1.6), 2.2 (1.0), 2.3 (0.8), 2.4 (0.6)
-            const toothRatios = [0.65, 0.8, 1.05, 1.6, 1.6, 1.05, 0.8, 0.65];
-            const totalRatio = toothRatios.reduce((a, b) => a + b, 0);
-            
-            const archWidth = mouthWidth * 0.92;
-            const startX = (leftCorner.x + rightCorner.x) / 2 - archWidth / 2;
-            const angle = Math.atan2(rightCorner.y - leftCorner.y, rightCorner.x - leftCorner.x);
-
-            let currentX = startX;
-
-            for (let i = 0; i < toothRatios.length; i++) {
-                const tWidth = (toothRatios[i] / totalRatio) * archWidth;
-                const isCentral = (i === 3 || i === 4);
-                const isLateral = (i === 2 || i === 5);
-                const isCanine  = (i === 1 || i === 6);
-
-                // Высота зуба по клиническим стандартам
-                let tHeight = mouthHeight * 0.85;
-                if (isLateral) tHeight *= 0.92; // Боковые резцы чуть короче центральных
-                if (isCanine) tHeight *= 0.98;  // Клыки заострены
-
-                const toothCenterX = currentX + tWidth / 2;
-                const toothCenterY = topLipCenter.y + (toothCenterX - topLipCenter.x) * Math.sin(angle);
-
-                // Рисуем тело керамического зуба
-                ctx.save();
-                ctx.translate(toothCenterX, toothCenterY);
-                ctx.rotate(angle);
-
-                ctx.beginPath();
-                const radius = isCanine ? 3 : 6;
-                ctx.roundRect(-tWidth / 2 + 1, 0, tWidth - 2, tHeight, [2, 2, radius, radius]);
-
-                // Градиент керамики: от шейки A2 к белоснежному телу BL1 и прозрачному режущему краю
-                const grad = ctx.createLinearGradient(0, 0, 0, tHeight);
-                grad.addColorStop(0, "rgba(242, 235, 215, 0.98)");   // Шейка зуба
-                grad.addColorStop(0.3, "rgba(255, 255, 252, 1.0)");  // Тело зуба (BL1)
-                grad.addColorStop(0.85, "rgba(245, 248, 255, 0.95)"); // Эмаль
-                grad.addColorStop(1.0, "rgba(200, 220, 240, 0.85)");  // Прозрачный режущий край (halo-эффект)
-
-                ctx.fillStyle = grad;
-                ctx.fill();
-
-                // Вертикальные мамелоны и микротекстура
-                ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(-tWidth * 0.15, tHeight * 0.2);
-                ctx.lineTo(-tWidth * 0.15, tHeight * 0.8);
-                ctx.moveTo(tWidth * 0.15, tHeight * 0.2);
-                ctx.lineTo(tWidth * 0.15, tHeight * 0.8);
-                ctx.stroke();
-
-                // Блик света на выпуклости коронки
-                ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
-                ctx.beginPath();
-                ctx.ellipse(0, tHeight * 0.35, tWidth * 0.25, tHeight * 0.15, 0, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Тень между зубами (контактный пункт)
-                ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
-                ctx.fillRect(-tWidth / 2, 0, 1.5, tHeight);
-                ctx.fillRect(tWidth / 2 - 1.5, 0, 1.5, tHeight);
-
-                ctx.restore();
-                currentX += tWidth;
+                const blob = await response.blob();
+                const img = new Image();
+                img.src = URL.createObjectURL(blob);
+                await img.decode();
+                return img;
             }
 
-            ctx.restore();
-            return resCanvas;
+            throw new Error("Сервер перегружен. Попробуйте еще раз через 30 секунд.");
         }
 
-        // Отрисовка интерактивного слайдера
+        // Отрисовка слайдера
         function renderResult(beforeCanvas, afterImage) {
             showScreen('result');
 
             const cBefore = document.getElementById('canvas-before');
             const cAfter = document.getElementById('canvas-after');
-            const box = document.getElementById('compare-box');
 
-            cBefore.width = beforeCanvas.width;
-            cBefore.height = beforeCanvas.height;
+            cBefore.width = 512;
+            cBefore.height = 512;
             cBefore.getContext('2d').drawImage(beforeCanvas, 0, 0);
 
-            cAfter.width = beforeCanvas.width;
-            cAfter.height = beforeCanvas.height;
-            cAfter.getContext('2d').drawImage(afterImage, 0, 0, beforeCanvas.width, beforeCanvas.height);
-
-            const aspect = beforeCanvas.width / beforeCanvas.height;
-            box.style.width = '320px';
-            box.style.height = `${320 / aspect}px`;
+            cAfter.width = 512;
+            cAfter.height = 512;
+            cAfter.getContext('2d').drawImage(afterImage, 0, 0);
 
             setupSlider();
         }
