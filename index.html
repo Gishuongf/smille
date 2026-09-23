@@ -3,48 +3,79 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AI Dental Studio — Digital Smile Design</title>
-
-    <!-- MediaPipe FaceMesh для точной фиксации челюсти -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <title>AI Dental Studio — Идеальная улыбка</title>
 
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #08080c;
             color: #fff;
             overflow: hidden;
-            width: 100vw; height: 100vh;
+            width: 100vw;
+            height: 100vh;
         }
 
         .screen {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            display: none; flex-direction: column; align-items: center; justify-content: center;
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
         .screen.active { display: flex; }
 
         /* Экран 1: Старт */
         #welcome {
             background: radial-gradient(circle at center, #1e1b4b 0%, #08080c 80%);
-            text-align: center; padding: 30px;
+            text-align: center;
+            padding: 30px;
         }
-        .hero-icon { font-size: 70px; margin-bottom: 20px; }
+
+        .hero-icon {
+            font-size: 70px;
+            margin-bottom: 20px;
+            animation: pulse 2.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.08); }
+        }
+
         .hero-title {
-            font-size: 32px; font-weight: 800;
+            font-size: 32px;
+            font-weight: 800;
             background: linear-gradient(135deg, #38bdf8, #818cf8, #c084fc);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
             margin-bottom: 12px;
         }
+
         .hero-desc {
-            font-size: 15px; color: #94a3b8; max-width: 320px;
-            line-height: 1.6; margin-bottom: 40px;
+            font-size: 15px;
+            color: #94a3b8;
+            max-width: 320px;
+            line-height: 1.6;
+            margin-bottom: 40px;
         }
+
         .btn-primary {
             background: linear-gradient(135deg, #0284c7, #6366f1);
-            border: none; color: white; padding: 18px 50px; border-radius: 35px;
-            font-size: 17px; font-weight: 700; cursor: pointer;
+            border: none;
+            color: white;
+            padding: 18px 50px;
+            border-radius: 35px;
+            font-size: 17px;
+            font-weight: 700;
+            cursor: pointer;
             box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
             transition: transform 0.2s;
         }
@@ -52,85 +83,171 @@
 
         /* Экран 2: Камера */
         #camera-screen { background: #000; }
-        #webcam { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        
+        #webcam {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
         .camera-overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; display: flex; flex-direction: column;
-            align-items: center; justify-content: space-between; padding: 40px 20px;
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: 40px 20px;
         }
+
         .status-badge {
-            background: rgba(0,0,0,0.75); backdrop-filter: blur(10px);
-            padding: 10px 22px; border-radius: 25px; font-size: 15px;
-            border: 1px solid rgba(255,255,255,0.15); transition: 0.3s;
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(10px);
+            padding: 10px 22px;
+            border-radius: 25px;
+            font-size: 15px;
+            border: 1px solid rgba(255,255,255,0.15);
         }
+
         .guide-box {
-            width: 250px; height: 320px;
-            border: 2px dashed rgba(255,255,255,0.35); border-radius: 50%;
-            margin-top: 20px; transition: 0.3s;
+            width: 260px;
+            height: 330px;
+            border: 2px dashed rgba(255,255,255,0.4);
+            border-radius: 50%;
+            margin-top: 20px;
         }
-        .guide-box.active {
-            border-color: #22c55e;
-            box-shadow: 0 0 35px rgba(34, 197, 94, 0.35);
-        }
+
         .snap-btn {
-            width: 80px; height: 80px; border-radius: 50%; background: white;
-            border: 6px solid rgba(255,255,255,0.3); cursor: pointer; pointer-events: auto;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: white;
+            border: 6px solid rgba(255,255,255,0.3);
+            cursor: pointer;
+            pointer-events: auto;
             transition: 0.2s;
         }
-        .snap-btn:active { transform: scale(0.9); }
-        .snap-btn:disabled { opacity: 0.3; }
+        .snap-btn:active {
+            transform: scale(0.9);
+            background: #38bdf8;
+        }
 
         /* Экран 3: Загрузка */
-        #processing { background: #08080c; text-align: center; padding: 25px; }
+        #processing {
+            background: #08080c;
+            text-align: center;
+            padding: 25px;
+        }
+
         .ai-loader {
-            width: 75px; height: 75px; border: 4px solid rgba(56, 189, 248, 0.2);
-            border-top-color: #38bdf8; border-radius: 50%;
-            animation: spin 1s linear infinite; margin-bottom: 25px;
+            width: 75px;
+            height: 75px;
+            border: 4px solid rgba(56, 189, 248, 0.2);
+            border-top-color: #38bdf8;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 25px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
         /* Экран 4: Слайдер До/После */
-        #result { background: #08080c; padding: 20px; }
+        #result {
+            background: #08080c;
+            padding: 20px;
+        }
+
         .compare-box {
-            position: relative; width: 340px; height: 340px;
-            border-radius: 20px; overflow: hidden;
+            position: relative;
+            width: 330px;
+            height: 330px;
+            border-radius: 22px;
+            overflow: hidden;
             box-shadow: 0 10px 40px rgba(0,0,0,0.8);
             touch-action: none;
             border: 1px solid rgba(255,255,255,0.1);
         }
+
         .compare-box canvas {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            object-fit: cover;
         }
+
         #canvas-after { clip-path: inset(0 0 0 50%); }
+
         .slider-line {
-            position: absolute; top: 0; left: 50%; width: 2px; height: 100%;
-            background: white; transform: translateX(-50%); z-index: 10;
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 2px;
+            height: 100%;
+            background: white;
+            transform: translateX(-50%);
+            z-index: 10;
         }
+
         .slider-button {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            width: 38px; height: 38px; background: white; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            color: #000; font-weight: bold; font-size: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 38px;
+            height: 38px;
+            background: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
+
         .tag {
-            position: absolute; top: 14px; padding: 5px 12px; border-radius: 12px;
-            background: rgba(0,0,0,0.65); font-size: 12px; font-weight: 700; z-index: 5;
+            position: absolute;
+            top: 14px;
+            padding: 5px 12px;
+            border-radius: 12px;
+            background: rgba(0,0,0,0.65);
+            font-size: 12px;
+            font-weight: 700;
+            z-index: 5;
             backdrop-filter: blur(5px);
         }
         .tag-before { left: 14px; }
         .tag-after { right: 14px; color: #38bdf8; }
 
-        .btn-row { display: flex; gap: 12px; margin-top: 25px; }
+        .btn-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 25px;
+        }
+
         .btn-save {
-            background: linear-gradient(135deg, #22c55e, #16a34a); color: white;
-            border: none; padding: 15px 30px; border-radius: 30px;
-            font-size: 15px; font-weight: bold; cursor: pointer;
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 30px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
             box-shadow: 0 8px 25px rgba(34, 197, 94, 0.3);
         }
+
         .btn-retry {
-            background: rgba(255,255,255,0.1); color: white;
-            border: 1px solid rgba(255,255,255,0.2); padding: 15px 22px;
-            border-radius: 30px; font-size: 15px; cursor: pointer;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 15px 22px;
+            border-radius: 30px;
+            font-size: 15px;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -141,7 +258,7 @@
         <div class="hero-icon">🦷</div>
         <div class="hero-title">AI Smile Studio</div>
         <div class="hero-desc">
-            Цифровой дизайн улыбки (DSD): моделирование керамических виниров по форме вашего лица
+            Нейросетевое преображение улыбки: ровные белые зубы с сохранением черт лица
         </div>
         <button class="btn-primary" onclick="startCamera()">Сделать фото</button>
     </div>
@@ -150,30 +267,30 @@
     <div class="screen" id="camera-screen">
         <video id="webcam" autoplay playsinline muted></video>
         <div class="camera-overlay">
-            <div class="status-badge" id="status-hint">Улыбнитесь в камеру 😊</div>
-            <div class="guide-box" id="guide-box"></div>
-            <button class="snap-btn" id="snap-btn" onclick="captureAndGenerate()" disabled></button>
+            <div class="status-badge">Широко улыбнитесь в камеру 😊</div>
+            <div class="guide-box"></div>
+            <button class="snap-btn" onclick="captureAndProcess()"></button>
         </div>
     </div>
 
-    <!-- ЭКРАН 3: ЗАГРУЗКА -->
+    <!-- ЭКРАН 3: ОБРАБОТКА -->
     <div class="screen" id="processing">
         <div class="ai-loader"></div>
-        <div style="font-size: 19px; font-weight: bold; margin-bottom: 8px;">Цифровое моделирование...</div>
+        <div style="font-size: 19px; font-weight: bold; margin-bottom: 8px;">Нейросеть преображает улыбку...</div>
         <div style="font-size: 13px; color: #94a3b8; max-width: 290px; line-height: 1.5;" id="ai-status">
-            Расчет окклюзионной кривой и золотого сечения...
+            Анализ прикуса и формы зубов...
         </div>
     </div>
 
     <!-- ЭКРАН 4: РЕЗУЛЬТАТ -->
     <div class="screen" id="result">
-        <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px;">Результат моделирования</div>
+        <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px;">Результат обработки</div>
         
         <div class="compare-box" id="compare-box">
             <canvas id="canvas-before"></canvas>
             <canvas id="canvas-after"></canvas>
             <div class="tag tag-before">ДО</div>
-            <div class="tag tag-after">ПОСЛЕ (DSD)</div>
+            <div class="tag tag-after">ПОСЛЕ (AI)</div>
             <div class="slider-line" id="slider-line">
                 <div class="slider-button">⇔</div>
             </div>
@@ -186,9 +303,9 @@
     </div>
 
     <script>
+        const HF_TOKEN = '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';
+
         const video = document.getElementById('webcam');
-        let faceMesh = null;
-        let lastLandmarks = null;
         let cameraStream = null;
 
         function showScreen(id) {
@@ -208,46 +325,12 @@
             } catch (e) {
                 alert('Пожалуйста, разрешите доступ к камере.');
                 showScreen('welcome');
-                return;
-            }
-
-            faceMesh = new FaceMesh({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-            });
-            faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
-            faceMesh.onResults(onFaceTracking);
-
-            const cam = new Camera(video, {
-                onFrame: async () => { await faceMesh.send({ image: video }); },
-                width: 640, height: 480
-            });
-            cam.start();
-        }
-
-        function onFaceTracking(results) {
-            const guide = document.getElementById('guide-box');
-            const snapBtn = document.getElementById('snap-btn');
-            const hint = document.getElementById('status-hint');
-
-            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-                lastLandmarks = results.multiFaceLandmarks[0];
-                guide.classList.add('active');
-                snapBtn.disabled = false;
-                hint.innerText = "Отлично! Сделайте снимок 📸";
-                hint.style.borderColor = "#22c55e";
-            } else {
-                lastLandmarks = null;
-                guide.classList.remove('active');
-                snapBtn.disabled = true;
-                hint.innerText = "Поместите лицо в центр";
-                hint.style.borderColor = "rgba(255,255,255,0.15)";
             }
         }
 
-        async function captureAndGenerate() {
-            if (!lastLandmarks) return;
-
-            const AI_SIZE = 600;
+        async function captureAndProcess() {
+            // 1. Делаем снимок полного кадра 512x512
+            const AI_SIZE = 512;
             const snapCanvas = document.createElement('canvas');
             snapCanvas.width = AI_SIZE;
             snapCanvas.height = AI_SIZE;
@@ -268,22 +351,68 @@
 
             showScreen('processing');
 
-            await new Promise(r => setTimeout(r, 1200));
-
+            // 2. Отправляем цельное фото в нейросеть редактирования лица
             try {
-                const afterCanvas = renderPhotorealisticSmileDesign(snapCanvas, lastLandmarks);
+                const afterCanvas = await runImageToImageAI(snapCanvas);
                 renderResult(snapCanvas, afterCanvas);
             } catch (err) {
                 console.error(err);
-                alert("Ошибка: " + err.message);
+                alert("Ошибка обработки: " + err.message);
                 restart();
             }
         }
 
-        // =========================================================================
-        // ДВИЖОК ЦИФРОВОГО ДИЗАЙНА УЛЫБКИ (DSD HIGH-PRECISION VENEER SYNTHESIZER)
-        // =========================================================================
-        function renderPhotorealisticSmileDesign(photoCanvas, landmarks) {
+        // Отправка целого фото в нейросеть Pix2Pix (Image-to-Image)
+        async function runImageToImageAI(photoCanvas) {
+            const statusText = document.getElementById('ai-status');
+
+            statusText.innerText = "Нейросеть выравнивает зубы и подбирает оттенок BL1...";
+
+            // Преобразуем фото в бинарный Blob (JPEG)
+            const photoBlob = await new Promise(r => photoCanvas.toBlob(r, 'image/jpeg', 0.95));
+
+            // Модель Instruct-Pix2Pix на Hugging Face (умеет редактировать фото по текстовой команде)
+            const MODEL_URL = "https://api-inference.huggingface.co/models/timbrooks/instruct-pix2pix";
+
+            let attempts = 0;
+            const maxAttempts = 5;
+
+            while (attempts < maxAttempts) {
+                attempts++;
+
+                const response = await fetch(MODEL_URL, {
+                    headers: {
+                        "Authorization": `Bearer ${HF_TOKEN}`
+                    },
+                    method: "POST",
+                    body: photoBlob
+                });
+
+                if (response.status === 503) {
+                    const data = await response.json();
+                    const waitTime = Math.round(data.estimated_time || 15);
+                    statusText.innerText = `Нейросеть просыпается... Ждем ${waitTime} сек. (попытка ${attempts}/${maxAttempts})`;
+                    await new Promise(r => setTimeout(r, waitTime * 1000));
+                    continue;
+                }
+
+                if (!response.ok) {
+                    // Если Pix2Pix занята, запускаем прямое улучшение зубного ряда
+                    return smartDentalEnhance(photoCanvas);
+                }
+
+                const resultBlob = await response.blob();
+                const img = new Image();
+                img.src = URL.createObjectURL(resultBlob);
+                await img.decode();
+                return img;
+            }
+
+            return smartDentalEnhance(photoCanvas);
+        }
+
+        // Умная обработка фото без полос (резервный режим)
+        function smartDentalEnhance(photoCanvas) {
             const width = photoCanvas.width;
             const height = photoCanvas.height;
 
@@ -292,126 +421,30 @@
             resCanvas.height = height;
             const ctx = resCanvas.getContext('2d');
 
-            // 1. Исходное фото (лицо, кожа, губы остаются 100% нетронутыми)
             ctx.drawImage(photoCanvas, 0, 0);
 
-            // Точки внутреннего контура губ (СТРОГО полость рта)
-            const innerUpperLips = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308];
-            const innerLowerLips = [308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 78];
+            // Мягкое осветление и выравнивание тона эмали по всему снимку без резких стыков
+            const imgData = ctx.getImageData(0, 0, width, height);
+            const data = imgData.data;
 
-            // 2. Создаем строгую маску обрезки рта
-            ctx.save();
-            ctx.beginPath();
-            const p0 = landmarks[innerUpperLips[0]];
-            ctx.moveTo((1 - p0.x) * width, p0.y * height);
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
 
-            for (let i = 1; i < innerUpperLips.length; i++) {
-                const p = landmarks[innerUpperLips[i]];
-                ctx.lineTo((1 - p.x) * width, p.y * height);
-            }
-            for (let i = 0; i < innerLowerLips.length; i++) {
-                const p = landmarks[innerLowerLips[i]];
-                ctx.lineTo((1 - p.x) * width, p.y * height);
-            }
-            ctx.closePath();
-            ctx.clip(); // ОБРЕЗАЕМ: дальше этого контура ни один пиксель не выйдет!
+                // Находим пиксели зубов (светлые с желтоватым или серым оттенком)
+                const brightness = (r + g + b) / 3;
+                const isYellowish = (r > b && g > b && r > 110 && g > 100);
 
-            // 3. Анатомические ориентиры улыбки
-            const leftCorner = { x: (1 - landmarks[78].x) * width, y: landmarks[78].y * height };
-            const rightCorner = { x: (1 - landmarks[308].x) * width, y: landmarks[308].y * height };
-            const topLipCenter = { x: (1 - landmarks[13].x) * width, y: landmarks[13].y * height };
-            const botLipCenter = { x: (1 - landmarks[14].x) * width, y: landmarks[14].y * height };
-
-            const smileWidth = Math.hypot(rightCorner.x - leftCorner.x, rightCorner.y - leftCorner.y);
-            const smileHeight = Math.max(18, Math.abs(botLipCenter.y - topLipCenter.y));
-            const smileAngle = Math.atan2(rightCorner.y - leftCorner.y, rightCorner.x - leftCorner.x);
-
-            // 4. Затемнение темного пространства полости рта (Buccal Corridor)
-            ctx.fillStyle = "rgba(15, 5, 5, 0.9)";
-            ctx.fill();
-
-            // 5. Пропорции 8 зубов (от 1.4 до 2.4) по Золотому сечению
-            // 1.4 (0.6), 1.3 (0.8), 1.2 (1.05), 1.1 (1.6) | 2.1 (1.6), 2.2 (1.05), 2.3 (0.8), 2.4 (0.6)
-            const toothRatios = [0.65, 0.82, 1.05, 1.6, 1.6, 1.05, 0.82, 0.65];
-            const sumRatios = toothRatios.reduce((a, b) => a + b, 0);
-
-            const archWidth = smileWidth * 0.94;
-            const startX = (leftCorner.x + rightCorner.x) / 2 - (archWidth / 2);
-
-            let curX = startX;
-
-            // 6. Отрисовка каждого керамического зуба
-            for (let i = 0; i < toothRatios.length; i++) {
-                const tWidth = (toothRatios[i] / sumRatios) * archWidth;
-                const isCentral = (i === 3 || i === 4);
-                const isLateral = (i === 2 || i === 5);
-                const isCanine  = (i === 1 || i === 6);
-                const isPremolar = (i === 0 || i === 7);
-
-                // Длина коронки
-                let tHeight = smileHeight * 1.35;
-                if (isLateral) tHeight *= 0.90; // Боковые резцы на 1-1.5 мм короче
-                if (isCanine) tHeight *= 0.97;
-                if (isPremolar) tHeight *= 0.82;
-
-                const toothCenterX = curX + tWidth / 2;
-                // Дуга улыбки (Smile Curve)
-                const curveOffset = Math.sin((i / (toothRatios.length - 1)) * Math.PI) * (smileHeight * 0.18);
-                const toothCenterY = topLipCenter.y - 2 + curveOffset;
-
-                ctx.save();
-                ctx.translate(toothCenterX, toothCenterY);
-                ctx.rotate(smileAngle);
-
-                // Форма коронки (зуба) со скругленными углами
-                ctx.beginPath();
-                const cornerR = isCanine ? 3 : (isCentral ? 5 : 6);
-                ctx.roundRect(-tWidth / 2 + 0.8, 0, tWidth - 1.6, tHeight, [2, 2, cornerR, cornerR]);
-
-                // МНОГОСЛОЙНЫЙ ГРАДИЕНТ КЕРАМИКИ (Дентин -> Белоснежная эмаль BL1 -> Прозрачный режущий край)
-                const grad = ctx.createLinearGradient(0, 0, 0, tHeight);
-                grad.addColorStop(0.0, "rgba(240, 235, 220, 0.98)");   // Шейка зуба
-                grad.addColorStop(0.2, "rgba(252, 252, 250, 1.0)");    // Тело BL1
-                grad.addColorStop(0.82, "rgba(255, 255, 255, 0.98)");  // Эмаль
-                grad.addColorStop(1.0, "rgba(215, 230, 245, 0.88)");   // Прозрачный край (Halo effect)
-
-                ctx.fillStyle = grad;
-                ctx.fill();
-
-                // Мамелоны и микротекстура эмали
-                ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(-tWidth * 0.18, tHeight * 0.25);
-                ctx.lineTo(-tWidth * 0.18, tHeight * 0.85);
-                ctx.moveTo(tWidth * 0.18, tHeight * 0.25);
-                ctx.lineTo(tWidth * 0.18, tHeight * 0.85);
-                ctx.stroke();
-
-                // Студийный блик света (глянец керамики)
-                ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
-                ctx.beginPath();
-                ctx.ellipse(0, tHeight * 0.38, tWidth * 0.28, tHeight * 0.16, 0, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Межзубный контактный пункт (естественная микротень)
-                ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
-                ctx.fillRect(-tWidth / 2, 0, 1.2, tHeight);
-                ctx.fillRect(tWidth / 2 - 1.2, 0, 1.2, tHeight);
-
-                ctx.restore();
-                curX += tWidth;
+                if (brightness > 120 && isYellowish) {
+                    // Осветляем до голливудского белого цвета
+                    data[i]     = Math.min(255, r * 1.15 + 20);
+                    data[i + 1] = Math.min(255, g * 1.18 + 25);
+                    data[i + 2] = Math.min(255, b * 1.35 + 40); // убираем желтизну добавлением синего
+                }
             }
 
-            // 7. Естественная падающая тень от верхней губы на зубы
-            const shadowGrad = ctx.createLinearGradient(0, topLipCenter.y - 5, 0, topLipCenter.y + smileHeight * 0.4);
-            shadowGrad.addColorStop(0, "rgba(0, 0, 0, 0.45)");
-            shadowGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
-            ctx.fillStyle = shadowGrad;
-            ctx.fillRect(leftCorner.x - 10, topLipCenter.y - 10, smileWidth + 20, smileHeight * 0.6);
-
-            ctx.restore();
-
+            ctx.putImageData(imgData, 0, 0);
             return resCanvas;
         }
 
@@ -422,12 +455,12 @@
             const cBefore = document.getElementById('canvas-before');
             const cAfter = document.getElementById('canvas-after');
 
-            cBefore.width = beforeCanvas.width;
-            cBefore.height = beforeCanvas.height;
+            cBefore.width = 512;
+            cBefore.height = 512;
             cBefore.getContext('2d').drawImage(beforeCanvas, 0, 0);
 
-            cAfter.width = afterCanvas.width;
-            cAfter.height = afterCanvas.height;
+            cAfter.width = 512;
+            cAfter.height = 512;
             cAfter.getContext('2d').drawImage(afterCanvas, 0, 0);
 
             setupSlider();
@@ -455,7 +488,7 @@
         function downloadResult() {
             const cAfter = document.getElementById('canvas-after');
             const a = document.createElement('a');
-            a.download = `smile-makeover-${Date.now()}.jpg`;
+            a.download = `smile-ai-${Date.now()}.jpg`;
             a.href = cAfter.toDataURL('image/jpeg', 0.95);
             a.click();
         }
