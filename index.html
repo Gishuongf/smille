@@ -5,9 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>AI Dental Studio — Генерация улыбки</title>
 
-    <!-- MediaPipe FaceMesh для идеального выделения области рта -->
+    <!-- MediaPipe FaceMesh для поиска зубов -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+    <!-- Hugging Face Официальный Gradio Клиент для браузера -->
+    <script type="module">
+        import { Client } from "https://cdn.jsdelivr.net/npm/@gradio/client/dist/index.min.js";
+        window.GradioClient = Client;
+    </script>
 
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -141,7 +147,7 @@
         <div class="hero-icon">🦷</div>
         <div class="hero-title">AI Smile Studio</div>
         <div class="hero-desc">
-            Генерация анатомически идеальной улыбки с помощью нейросети Stable Diffusion
+            Генерация идеальной улыбки и анатомических виниров с помощью нейросети Stable Diffusion
         </div>
         <button class="btn-primary" onclick="startCamera()">Сделать фото</button>
     </div>
@@ -156,12 +162,12 @@
         </div>
     </div>
 
-    <!-- ЭКРАН 3: ЗАГРУЗКА -->
+    <!-- ЭКРАН 3: ОБРАБОТКА -->
     <div class="screen" id="processing">
         <div class="ai-loader"></div>
-        <div style="font-size: 19px; font-weight: bold; margin-bottom: 8px;">Нейросеть генерирует зубы...</div>
+        <div style="font-size: 19px; font-weight: bold; margin-bottom: 8px;">Нейросеть генерирует улыбку...</div>
         <div style="font-size: 13px; color: #94a3b8; max-width: 290px; line-height: 1.5;" id="ai-status">
-            Подключение к AI серверу Hugging Face...
+            Подключение к AI кластеру Hugging Face...
         </div>
     </div>
 
@@ -249,14 +255,13 @@
         async function captureAndGenerate() {
             if (!lastLandmarks) return;
 
-            // 1. Создаем стандартизированное фото 512x512 для Stable Diffusion
+            // 1. Создаем кадрированное фото 512x512
             const AI_SIZE = 512;
             const snapCanvas = document.createElement('canvas');
             snapCanvas.width = AI_SIZE;
             snapCanvas.height = AI_SIZE;
             const ctx = snapCanvas.getContext('2d');
 
-            // Зеркалим изображение и кадрируем строго по центру
             ctx.translate(AI_SIZE, 0);
             ctx.scale(-1, 1);
 
@@ -266,19 +271,18 @@
 
             ctx.drawImage(video, sx, sy, minDim, minDim, 0, 0, AI_SIZE, AI_SIZE);
 
-            // 2. Создаем точную маску рта 512x512
+            // 2. Создаем маску рта 512x512
             const maskCanvas = generateMask512(AI_SIZE, AI_SIZE, lastLandmarks);
 
-            // Останавливаем камеру
             if (cameraStream) {
                 cameraStream.getTracks().forEach(track => track.stop());
             }
 
             showScreen('processing');
 
-            // 3. Отправляем в Hugging Face Stable Diffusion
+            // 3. Отправляем в нейросеть через Gradio Client
             try {
-                const aiResultImage = await callHuggingFaceAI(snapCanvas, maskCanvas);
+                const aiResultImage = await runHuggingFaceInpainting(snapCanvas, maskCanvas);
                 renderResult(snapCanvas, aiResultImage);
             } catch (err) {
                 console.error(err);
@@ -287,21 +291,18 @@
             }
         }
 
-        // Построение маски 512x512
+        // Построение маски зубов
         function generateMask512(width, height, landmarks) {
             const maskCanvas = document.createElement('canvas');
             maskCanvas.width = width;
             maskCanvas.height = height;
             const mCtx = maskCanvas.getContext('2d');
 
-            // Черный фон = исходное лицо не изменяется
             mCtx.fillStyle = '#000000';
             mCtx.fillRect(0, 0, width, height);
 
-            // Точки рта
             const mouthPoints = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
 
-            // Белая область = место, где нейросеть сгенерирует новые зубы
             mCtx.fillStyle = '#ffffff';
             mCtx.beginPath();
             const p0 = landmarks[mouthPoints[0]];
@@ -314,76 +315,46 @@
             mCtx.closePath();
             mCtx.fill();
 
-            // Легкое размытие для идеальной бесшовности на губах
             mCtx.filter = 'blur(4px)';
             mCtx.drawImage(maskCanvas, 0, 0);
 
             return maskCanvas;
         }
 
-        // Запрос к Hugging Face API Inpainting с ПОЛНЫМ DataURI
-        async function callHuggingFaceAI(photoCanvas, maskCanvas) {
+        // Отправка в Hugging Face через официальный Gradio Client
+        async function runHuggingFaceInpainting(photoCanvas, maskCanvas) {
             const statusText = document.getElementById('ai-status');
 
-            // ВАЖНО: передаем полный DataURL с префиксом data:image/jpeg;base64,
-            // чтобы Python на сервере не искал несуществующий файл
-            const imageURI = photoCanvas.toDataURL('image/jpeg', 0.95);
-            const maskURI = maskCanvas.toDataURL('image/png');
+            // Конвертируем Canvas в Blobs
+            const photoBlob = await new Promise(r => photoCanvas.toBlob(r, 'image/png'));
+            const maskBlob = await new Promise(r => maskCanvas.toBlob(r, 'image/png'));
 
-            // Проверенная модель SD Inpainting на Hugging Face
-            const MODEL_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-inpainting";
+            statusText.innerText = "Подключение к нейросети SD Inpainting...";
 
-            let attempts = 0;
-            const maxAttempts = 6;
+            // Подключаемся к рабочему спейсу Hugging Face
+            const app = await window.GradioClient.connect("fffiloni/stable-diffusion-inpainting", {
+                hf_token: HF_TOKEN
+            });
 
-            while (attempts < maxAttempts) {
-                attempts++;
-                statusText.innerText = `Генерация улыбки нейросетью (запрос ${attempts}/${maxAttempts})...`;
+            statusText.innerText = "Генерация ровных зубов и эмали...";
 
-                const response = await fetch(MODEL_URL, {
-                    headers: {
-                        "Authorization": `Bearer ${HF_TOKEN}`,
-                        "Content-Type": "application/json"
-                    },
-                    method: "POST",
-                    body: JSON.stringify({
-                        inputs: {
-                            image: imageURI,
-                            mask_image: maskURI
-                        },
-                        parameters: {
-                            prompt: "extreme close up of beautiful mouth with perfect straight white teeth, hollywood porcelain veneers, clean natural dental anatomy, symmetric teeth, dental photography, ultra realistic 8k",
-                            negative_prompt: "toothless, missing teeth, dark empty mouth, crooked, yellow, braces, bad anatomy, deformed lips, blurry",
-                            guidance_scale: 8.5
-                        }
-                    })
-                });
+            // Вызываем Inpainting
+            const result = await app.predict("/predict", {
+                image: { background: photoBlob, layers: [maskBlob], composite: photoBlob },
+                prompt: "extreme close up of beautiful mouth with perfect straight white teeth, hollywood porcelain veneers, clean natural dental anatomy, symmetric teeth, dental photography, ultra realistic 8k",
+                negative_prompt: "toothless, missing teeth, dark empty mouth, crooked, yellow, braces, bad anatomy, deformed lips, blurry",
+            });
 
-                // Если модель спит (холодный старт сервера)
-                if (response.status === 503) {
-                    const data = await response.json();
-                    const waitTime = Math.round(data.estimated_time || 15);
-                    statusText.innerText = `AI-сервер просыпается... Ждем ${waitTime} сек.`;
-                    await new Promise(r => setTimeout(r, waitTime * 1000));
-                    continue;
-                }
-
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({ error: response.statusText }));
-                    throw new Error(err.error || `Ошибка сервера (${response.status})`);
-                }
-
-                const blob = await response.blob();
-                const img = new Image();
-                img.src = URL.createObjectURL(blob);
-                await img.decode();
-                return img;
-            }
-
-            throw new Error("Сервер перегружен. Попробуйте еще раз через 30 секунд.");
+            // Получаем результат
+            const outputUrl = result.data[0].url || result.data[0];
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.src = outputUrl;
+            await img.decode();
+            return img;
         }
 
-        // Отрисовка слайдера
+        // Слайдер результата
         function renderResult(beforeCanvas, afterImage) {
             showScreen('result');
 
