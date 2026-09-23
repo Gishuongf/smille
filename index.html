@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AI Dental Studio — Примерка улыбки</title>
+    <title>DentalLab — Digital Smile Design</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -19,6 +22,7 @@
         }
         .screen.active { display: flex; }
 
+        /* Экран 1: Старт */
         #welcome {
             background: radial-gradient(circle at center, #1e1b4b 0%, #08080c 80%);
             text-align: center; padding: 30px;
@@ -40,6 +44,7 @@
         }
         .btn-primary:active { transform: scale(0.95); }
 
+        /* Экран 2: Камера */
         #camera-screen { background: #000; }
         #webcam { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
         .camera-overlay {
@@ -47,77 +52,145 @@
             display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 40px 20px;
             pointer-events: none;
         }
-        .guide-box { width: 260px; height: 330px; border: 2px dashed rgba(255,255,255,0.4); border-radius: 50%; margin-top: 20px; }
+        .status-badge {
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(10px);
+            padding: 10px 22px; border-radius: 25px; font-size: 15px;
+            border: 1px solid rgba(255,255,255,0.15); transition: 0.3s;
+        }
+        .guide-box {
+            width: 260px; height: 330px;
+            border: 2px dashed rgba(255,255,255,0.35); border-radius: 50%;
+            margin-top: 20px; transition: 0.3s;
+        }
+        .guide-box.active { border-color: #22c55e; box-shadow: 0 0 35px rgba(34, 197, 94, 0.35); }
         .snap-btn {
             width: 80px; height: 80px; border-radius: 50%; background: white;
             border: 6px solid rgba(255,255,255,0.3); cursor: pointer; pointer-events: auto;
-            transition: transform 0.2s;
+            transition: 0.2s;
         }
         .snap-btn:active { transform: scale(0.9); }
+        .snap-btn:disabled { opacity: 0.3; }
 
+        /* Экран 3: Загрузка */
         #processing { background: #08080c; text-align: center; padding: 25px; }
         .ai-loader {
             width: 75px; height: 75px; border: 4px solid rgba(56, 189, 248, 0.2);
-            border-top-color: #38bdf8; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 25px;
+            border-top-color: #38bdf8; border-radius: 50%;
+            animation: spin 1s linear infinite; margin-bottom: 25px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        #result { background: #08080c; padding: 20px; }
+        /* Экран 4: Слайдер До/После */
+        #result { background: #08080c; padding: 15px; }
         .compare-box {
-            position: relative; width: 330px; height: 330px; border-radius: 20px;
-            overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.8); touch-action: none;
+            position: relative; width: 340px; height: 340px;
+            border-radius: 20px; overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+            touch-action: none;
             border: 1px solid rgba(255,255,255,0.1);
         }
-        .compare-box canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+        .compare-box canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;
+        }
         #canvas-after { clip-path: inset(0 0 0 50%); }
-        .slider-line { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; background: white; transform: translateX(-50%); z-index: 10; }
+        .slider-line {
+            position: absolute; top: 0; left: 50%; width: 2px; height: 100%;
+            background: white; transform: translateX(-50%); z-index: 10;
+        }
         .slider-button {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             width: 38px; height: 38px; background: white; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center; color: #000; font-weight: bold; font-size: 14px;
+            display: flex; align-items: center; justify-content: center;
+            color: #000; font-weight: bold; font-size: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
-        .tag { position: absolute; top: 14px; padding: 5px 12px; border-radius: 12px; background: rgba(0,0,0,0.65); font-size: 12px; font-weight: 700; z-index: 5; }
+        .tag {
+            position: absolute; top: 14px; padding: 5px 12px; border-radius: 12px;
+            background: rgba(0,0,0,0.65); font-size: 12px; font-weight: 700; z-index: 5;
+            backdrop-filter: blur(5px);
+        }
         .tag-before { left: 14px; }
         .tag-after { right: 14px; color: #38bdf8; }
 
-        .btn-row { display: flex; gap: 12px; margin-top: 25px; }
-        .btn-save { background: #22c55e; color: white; border: none; padding: 15px 30px; border-radius: 30px; font-weight: bold; cursor: pointer; }
-        .btn-retry { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 15px 22px; border-radius: 30px; cursor: pointer; }
+        /* Переключатель оттенков VITA */
+        .shade-picker {
+            display: flex; gap: 10px; margin-top: 15px; align-items: center;
+        }
+        .shade-btn {
+            background: rgba(255,255,255,0.1); border: 2px solid transparent;
+            color: #fff; padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: bold;
+            cursor: pointer; transition: 0.2s;
+        }
+        .shade-btn.active {
+            border-color: #38bdf8; background: rgba(56, 189, 248, 0.2); color: #38bdf8;
+        }
+
+        .btn-row { display: flex; gap: 12px; margin-top: 15px; }
+        .btn-save {
+            background: linear-gradient(135deg, #22c55e, #16a34a); color: white;
+            border: none; padding: 14px 28px; border-radius: 30px;
+            font-size: 15px; font-weight: bold; cursor: pointer;
+            box-shadow: 0 8px 25px rgba(34, 197, 94, 0.3);
+        }
+        .btn-retry {
+            background: rgba(255,255,255,0.1); color: white;
+            border: 1px solid rgba(255,255,255,0.2); padding: 14px 20px;
+            border-radius: 30px; font-size: 15px; cursor: pointer;
+        }
     </style>
 </head>
 <body>
 
+    <!-- ЭКРАН 1: СТАРТ -->
     <div class="screen active" id="welcome">
         <div class="hero-icon">🦷</div>
-        <div class="hero-title">AI Smile Studio</div>
-        <div class="hero-desc">Генерация идеальной анатомической улыбки с помощью серверной нейросети FLUX</div>
+        <div class="hero-title">DentalLab Studio</div>
+        <div class="hero-desc">
+            Цифровой дизайн улыбки (DSD): примерка анатомических керамических виниров E.max
+        </div>
         <button class="btn-primary" onclick="startCamera()">Сделать фото</button>
     </div>
 
+    <!-- ЭКРАН 2: КАМЕРА -->
     <div class="screen" id="camera-screen">
         <video id="webcam" autoplay playsinline muted></video>
         <div class="camera-overlay">
-            <div style="background: rgba(0,0,0,0.7); padding: 8px 18px; border-radius: 20px; font-size: 14px;">Улыбнитесь в камеру 😊</div>
-            <div class="guide-box"></div>
-            <button class="snap-btn" onclick="captureAndSend()"></button>
+            <div class="status-badge" id="status-hint">Широко улыбнитесь в камеру 😊</div>
+            <div class="guide-box" id="guide-box"></div>
+            <button class="snap-btn" id="snap-btn" onclick="captureAndProcess()" disabled></button>
         </div>
     </div>
 
+    <!-- ЭКРАН 3: ОБРАБОТКА -->
     <div class="screen" id="processing">
         <div class="ai-loader"></div>
-        <div style="font-size: 19px; font-weight: bold; margin-bottom: 8px;">Нейросеть FLUX генерирует зубы...</div>
-        <div style="font-size: 13px; color: #94a3b8; max-width: 290px;" id="ai-status">Моделирование анатомических виниров E.max...</div>
+        <div style="font-size: 19px; font-weight: bold; margin-bottom: 8px;">DSD Моделирование улыбки...</div>
+        <div style="font-size: 13px; color: #94a3b8; max-width: 290px; line-height: 1.5;" id="ai-status">
+            Анатомическая подгонка виниров E.max...
+        </div>
     </div>
 
+    <!-- ЭКРАН 4: РЕЗУЛЬТАТ -->
     <div class="screen" id="result">
-        <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px;">Результат нейросети</div>
+        <div style="font-size: 20px; font-weight: bold; margin-bottom: 10px;">Результат моделирования</div>
+        
         <div class="compare-box" id="compare-box">
             <canvas id="canvas-before"></canvas>
             <canvas id="canvas-after"></canvas>
             <div class="tag tag-before">ДО</div>
-            <div class="tag tag-after">ПОСЛЕ (AI)</div>
-            <div class="slider-line" id="slider-line"><div class="slider-button">⇔</div></div>
+            <div class="tag tag-after">ПОСЛЕ (DSD)</div>
+            <div class="slider-line" id="slider-line">
+                <div class="slider-button">⇔</div>
+            </div>
         </div>
+
+        <!-- Выбор оттенка -->
+        <div class="shade-picker">
+            <span style="font-size: 12px; color: #94a3b8;">Оттенок:</span>
+            <button class="shade-btn active" onclick="changeShade('BL1', this)">BL1 (Bleach)</button>
+            <button class="shade-btn" onclick="changeShade('A1', this)">A1 (Светлый)</button>
+            <button class="shade-btn" onclick="changeShade('A2', this)">A2 (Натуральный)</button>
+        </div>
+
         <div class="btn-row">
             <button class="btn-save" onclick="downloadResult()">💾 Сохранить</button>
             <button class="btn-retry" onclick="restart()">🔄 Еще раз</button>
@@ -126,7 +199,11 @@
 
     <script>
         const video = document.getElementById('webcam');
+        let faceMesh = null;
+        let lastLandmarks = null;
         let cameraStream = null;
+        let savedSnapCanvas = null;
+        let currentShade = 'BL1';
 
         function showScreen(id) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -135,6 +212,7 @@
 
         async function startCamera() {
             showScreen('camera-screen');
+
             try {
                 cameraStream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } }
@@ -144,64 +222,249 @@
             } catch (e) {
                 alert('Пожалуйста, разрешите доступ к камере.');
                 showScreen('welcome');
+                return;
+            }
+
+            faceMesh = new FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+            });
+            faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
+            faceMesh.onResults(onFaceTracking);
+
+            const cam = new Camera(video, {
+                onFrame: async () => { await faceMesh.send({ image: video }); },
+                width: 640, height: 480
+            });
+            cam.start();
+        }
+
+        function onFaceTracking(results) {
+            const guide = document.getElementById('guide-box');
+            const snapBtn = document.getElementById('snap-btn');
+            const hint = document.getElementById('status-hint');
+
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                lastLandmarks = results.multiFaceLandmarks[0];
+                guide.classList.add('active');
+                snapBtn.disabled = false;
+                hint.innerText = "Отлично! Сделайте снимок 📸";
+                hint.style.borderColor = "#22c55e";
+            } else {
+                lastLandmarks = null;
+                guide.classList.remove('active');
+                snapBtn.disabled = true;
+                hint.innerText = "Поместите лицо в центр";
+                hint.style.borderColor = "rgba(255,255,255,0.15)";
             }
         }
 
-        async function captureAndSend() {
+        async function captureAndProcess() {
+            if (!lastLandmarks) return;
+
+            const SIZE = 640;
             const snapCanvas = document.createElement('canvas');
-            snapCanvas.width = 512;
-            snapCanvas.height = 512;
+            snapCanvas.width = SIZE;
+            snapCanvas.height = SIZE;
             const ctx = snapCanvas.getContext('2d');
-            ctx.translate(512, 0);
+
+            ctx.translate(SIZE, 0);
             ctx.scale(-1, 1);
 
             const minDim = Math.min(video.videoWidth, video.videoHeight);
             const sx = (video.videoWidth - minDim) / 2;
             const sy = (video.videoHeight - minDim) / 2;
-            ctx.drawImage(video, sx, sy, minDim, minDim, 0, 0, 512, 512);
+
+            ctx.drawImage(video, sx, sy, minDim, minDim, 0, 0, SIZE, SIZE);
+
+            savedSnapCanvas = snapCanvas;
 
             if (cameraStream) {
-                cameraStream.getTracks().forEach(t => t.stop());
+                cameraStream.getTracks().forEach(track => track.stop());
             }
 
             showScreen('processing');
+            await new Promise(r => setTimeout(r, 600));
 
-            const imageBase64 = snapCanvas.toDataURL('image/jpeg', 0.95);
-
-            try {
-                const res = await fetch('/api/makeover', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: imageBase64 })
-                });
-
-                if (!res.ok) {
-                    throw new Error('Сбой обработки');
-                }
-
-                const resBlob = await res.blob();
-                const img = new Image();
-                img.src = URL.createObjectURL(resBlob);
-                await img.decode();
-
-                renderResult(snapCanvas, img);
-            } catch (err) {
-                console.error(err);
-                alert("Ошибка: " + err.message);
-                restart();
-            }
+            renderCurrentSmile();
         }
 
-        function renderResult(beforeCanvas, afterImg) {
+        function changeShade(shade, btn) {
+            document.querySelectorAll('.shade-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentShade = shade;
+            renderCurrentSmile();
+        }
+
+        function renderCurrentSmile() {
+            const afterCanvas = applyPrecisionDentalArch(savedSnapCanvas, lastLandmarks, currentShade);
+            renderResult(savedSnapCanvas, afterCanvas);
+        }
+
+        // =========================================================================
+        // ВЫСОКОТОЧНЫЙ DSD ДВИЖОК АНАТОМИЧЕСКИХ ВИНИРОВ
+        // =========================================================================
+        function applyPrecisionDentalArch(photoCanvas, landmarks, shade) {
+            const width = photoCanvas.width;
+            const height = photoCanvas.height;
+
+            const resCanvas = document.createElement('canvas');
+            resCanvas.width = width;
+            resCanvas.height = height;
+            const ctx = resCanvas.getContext('2d');
+
+            // 1. Рисуем оригинальное фото (лицо и кожа на 100% нетронуты)
+            ctx.drawImage(photoCanvas, 0, 0);
+
+            // Анатомические точки внутреннего контура губ
+            const upperLipIdx = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308];
+            const lowerLipIdx = [308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 78];
+
+            const leftCorner  = { x: (1 - landmarks[78].x) * width,  y: landmarks[78].y * height };
+            const rightCorner = { x: (1 - landmarks[308].x) * width, y: landmarks[308].y * height };
+            const topLip      = { x: (1 - landmarks[13].x) * width,   y: landmarks[13].y * height };
+            const botLip      = { x: (1 - landmarks[14].x) * width,   y: landmarks[14].y * height };
+
+            const mouthWidth  = Math.hypot(rightCorner.x - leftCorner.x, rightCorner.y - leftCorner.y);
+            const mouthHeight = Math.max(18, Math.abs(botLip.y - topLip.y));
+            const angle       = Math.atan2(rightCorner.y - leftCorner.y, rightCorner.x - leftCorner.x);
+
+            // 2. СТРОГАЯ МАСКА ВНУТРЕННЕГО КОНТУРА ГУБ
+            ctx.save();
+            ctx.beginPath();
+            
+            const pStart = { x: (1 - landmarks[upperLipIdx[0]].x) * width, y: landmarks[upperLipIdx[0]].y * height };
+            ctx.moveTo(pStart.x, pStart.y);
+
+            // Верхняя губа
+            for (let i = 1; i < upperLipIdx.length; i++) {
+                const pt = { x: (1 - landmarks[upperLipIdx[i]].x) * width, y: landmarks[upperLipIdx[i]].y * height };
+                ctx.lineTo(pt.x, pt.y);
+            }
+            // Нижняя губа
+            for (let i = 0; i < lowerLipIdx.length; i++) {
+                const pt = { x: (1 - landmarks[lowerLipIdx[i]].x) * width, y: landmarks[lowerLipIdx[i]].y * height };
+                ctx.lineTo(pt.x, pt.y);
+            }
+            ctx.closePath();
+            ctx.clip(); // ОБРЕЗКА: ни один пиксель не выйдет за пределы рта!
+
+            // 3. Затемнение глубины полости рта (Buccal corridor)
+            ctx.fillStyle = "rgba(12, 3, 3, 0.94)";
+            ctx.fill();
+
+            // 4. Палитра керамики
+            let colorBody, colorNeck, colorHalo;
+            if (shade === 'BL1') {
+                colorNeck = "rgba(240, 235, 222, 0.98)";
+                colorBody = "rgba(255, 255, 255, 1.0)";
+                colorHalo = "rgba(215, 235, 255, 0.85)";
+            } else if (shade === 'A1') {
+                colorNeck = "rgba(235, 225, 200, 0.98)";
+                colorBody = "rgba(250, 248, 240, 1.0)";
+                colorHalo = "rgba(220, 230, 240, 0.85)";
+            } else { // A2
+                colorNeck = "rgba(225, 210, 180, 0.98)";
+                colorBody = "rgba(245, 238, 220, 1.0)";
+                colorHalo = "rgba(225, 228, 230, 0.85)";
+            }
+
+            // 5. Пропорции 8 зубов (от 1.4 до 2.4) по Золотому сечению
+            const toothRatios = [0.65, 0.82, 1.05, 1.6, 1.6, 1.05, 0.82, 0.65];
+            const sumRatios = toothRatios.reduce((a, b) => a + b, 0);
+
+            const archWidth = mouthWidth * 0.93;
+            const startX = (leftCorner.x + rightCorner.x) / 2 - (archWidth / 2);
+
+            let curX = startX;
+
+            // 6. Отрисовка каждого винира
+            for (let i = 0; i < toothRatios.length; i++) {
+                const tWidth = (toothRatios[i] / sumRatios) * archWidth;
+                const isCentral = (i === 3 || i === 4);
+                const isLateral = (i === 2 || i === 5);
+                const isCanine  = (i === 1 || i === 6);
+                const isPremolar = (i === 0 || i === 7);
+
+                let tHeight = mouthHeight * 1.35;
+                if (isLateral) tHeight *= 0.91; // Боковой резец на 1 мм короче
+                if (isCanine)  tHeight *= 0.97;
+                if (isPremolar) tHeight *= 0.83;
+
+                const toothCenterX = curX + tWidth / 2;
+                // Дуга улыбки (Smile curve)
+                const curveOffset = Math.sin((i / (toothRatios.length - 1)) * Math.PI) * (mouthHeight * 0.16);
+                const toothCenterY = topLip.y - 3 + curveOffset;
+
+                ctx.save();
+                ctx.translate(toothCenterX, toothCenterY);
+                ctx.rotate(angle);
+
+                // Форма коронки
+                ctx.beginPath();
+                const cornerRadius = isCanine ? 3 : (isCentral ? 5 : 6);
+                ctx.roundRect(-tWidth / 2 + 0.8, 0, tWidth - 1.6, tHeight, [2, 2, cornerRadius, cornerRadius]);
+
+                // Многослойный градиент керамики
+                const grad = ctx.createLinearGradient(0, 0, 0, tHeight);
+                grad.addColorStop(0.0, colorNeck);
+                grad.addColorStop(0.25, colorBody);
+                grad.addColorStop(0.85, colorBody);
+                grad.addColorStop(1.0, colorHalo); // Прозрачный режущий край
+
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                // Мамелоны и микротекстура эмали
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(-tWidth * 0.18, tHeight * 0.25);
+                ctx.lineTo(-tWidth * 0.18, tHeight * 0.85);
+                ctx.moveTo(tWidth * 0.18, tHeight * 0.25);
+                ctx.lineTo(tWidth * 0.18, tHeight * 0.85);
+                ctx.stroke();
+
+                // Блик света на выпуклости коронки
+                ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
+                ctx.beginPath();
+                ctx.ellipse(0, tHeight * 0.38, tWidth * 0.26, tHeight * 0.15, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Межзубный контактный пункт (естественная микротень)
+                ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
+                ctx.fillRect(-tWidth / 2, 0, 1.2, tHeight);
+                ctx.fillRect(tWidth / 2 - 1.2, 0, 1.2, tHeight);
+
+                ctx.restore();
+                curX += tWidth;
+            }
+
+            // 7. Мягкая тень от верхней губы внутри рта
+            const shadowGrad = ctx.createLinearGradient(0, topLip.y - 5, 0, topLip.y + mouthHeight * 0.4);
+            shadowGrad.addColorStop(0, "rgba(0, 0, 0, 0.45)");
+            shadowGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+            ctx.fillStyle = shadowGrad;
+            ctx.fillRect(leftCorner.x - 10, topLip.y - 10, mouthWidth + 20, mouthHeight * 0.6);
+
+            ctx.restore();
+
+            return resCanvas;
+        }
+
+        // Интерактивный слайдер До/После
+        function renderResult(beforeCanvas, afterCanvas) {
             showScreen('result');
+
             const cBefore = document.getElementById('canvas-before');
             const cAfter = document.getElementById('canvas-after');
 
-            cBefore.width = 512; cBefore.height = 512;
+            cBefore.width = 640;
+            cBefore.height = 640;
             cBefore.getContext('2d').drawImage(beforeCanvas, 0, 0);
 
-            cAfter.width = 512; cAfter.height = 512;
-            cAfter.getContext('2d').drawImage(afterImg, 0, 0);
+            cAfter.width = 640;
+            cAfter.height = 640;
+            cAfter.getContext('2d').drawImage(afterCanvas, 0, 0);
 
             setupSlider();
         }
@@ -216,6 +479,7 @@
                 const clientX = e.touches ? e.touches[0].clientX : e.clientX;
                 let pos = (clientX - rect.left) / rect.width;
                 pos = Math.max(0.02, Math.min(0.98, pos));
+
                 line.style.left = `${pos * 100}%`;
                 cAfter.style.clipPath = `inset(0 0 0 ${pos * 100}%)`;
             }
@@ -227,7 +491,7 @@
         function downloadResult() {
             const cAfter = document.getElementById('canvas-after');
             const a = document.createElement('a');
-            a.download = `smile-ai-${Date.now()}.jpg`;
+            a.download = `smile-design-${currentShade}-${Date.now()}.jpg`;
             a.href = cAfter.toDataURL('image/jpeg', 0.95);
             a.click();
         }
