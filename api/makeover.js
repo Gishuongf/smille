@@ -1,4 +1,5 @@
 export const config = {
+  maxDuration: 60, // Разрешаем серверу ждать ответ до 60 секунд
   api: {
     bodyParser: {
       sizeLimit: '10mb',
@@ -7,7 +8,7 @@ export const config = {
 };
 
 export default async function handler(req, res) {
-  // Разрешаем CORS
+  // Настройка CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -17,7 +18,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ error: 'Только POST запросы' });
   }
 
   try {
@@ -27,17 +28,18 @@ export default async function handler(req, res) {
     }
 
     const HF_TOKEN = "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";
-    const MODEL_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-inpainting";
+    // Используем самый стабильный сервер Inpainting
+    const MODEL_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-inpainting";
 
-    // Убираем префиксы data:image... для чистого Base64
     const cleanImage = image.replace(/^data:image\/\w+;base64,/, "");
     const cleanMask = mask.replace(/^data:image\/\w+;base64,/, "");
 
-    // Серверный запрос к нейросети (без ограничений браузера)
+    // Запрос к нейросети
     const response = await fetch(MODEL_URL, {
       headers: {
         "Authorization": `Bearer ${HF_TOKEN}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "x-use-cache": "false"
       },
       method: "POST",
       body: JSON.stringify({
@@ -46,23 +48,25 @@ export default async function handler(req, res) {
           mask_image: cleanMask
         },
         parameters: {
-          prompt: "extreme close up of beautiful mouth with perfect straight white teeth, hollywood porcelain veneers, clean natural dental anatomy, symmetric teeth, dental photography, 8k",
-          negative_prompt: "toothless, crooked, yellow, gaps, braces, deformed, bad anatomy, blurry",
+          prompt: "perfect straight white teeth, hollywood smile, natural dental anatomy, symmetrical veneers, dental photography, 8k uhd",
+          negative_prompt: "missing teeth, empty mouth, dark mouth, crooked teeth, yellow teeth, deformed, ugly, bad anatomy, blurry",
           guidance_scale: 8.0
         }
       })
     });
 
     if (response.status === 503) {
-      return res.status(503).json({ error: 'Нейросеть просыпается, повторите через 15 секунд' });
+      const waitInfo = await response.json().catch(() => ({}));
+      return res.status(503).json({ 
+        error: `Нейросеть прогревается на GPU (${Math.round(waitInfo.estimated_time || 15)} сек). Попробуйте еще раз через мгновение.` 
+      });
     }
 
     if (!response.ok) {
       const errText = await response.text();
-      return res.status(response.status).json({ error: errText });
+      return res.status(response.status).json({ error: `Ошибка AI: ${errText}` });
     }
 
-    // Получаем сгенерированную картинку и отдаем браузеру
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
@@ -70,6 +74,7 @@ export default async function handler(req, res) {
     return res.status(200).send(buffer);
 
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    console.error("Vercel Function Error:", error);
+    return res.status(500).json({ error: `Сбой сервера: ${error.message}` });
   }
 }
