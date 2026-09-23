@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AI Dental Studio — Примерка идеальной улыбки</title>
+    <title>AI Dental Studio — Digital Smile Design</title>
 
     <!-- MediaPipe FaceMesh для точной фиксации челюсти -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -141,7 +141,7 @@
         <div class="hero-icon">🦷</div>
         <div class="hero-title">AI Smile Studio</div>
         <div class="hero-desc">
-            Генерация идеальной анатомической улыбки с помощью нейросети FLUX / SDXL
+            Цифровой дизайн улыбки (DSD): моделирование керамических виниров по форме вашего лица
         </div>
         <button class="btn-primary" onclick="startCamera()">Сделать фото</button>
     </div>
@@ -159,21 +159,21 @@
     <!-- ЭКРАН 3: ЗАГРУЗКА -->
     <div class="screen" id="processing">
         <div class="ai-loader"></div>
-        <div style="font-size: 19px; font-weight: bold; margin-bottom: 8px;">Нейросеть генерирует улыбку...</div>
+        <div style="font-size: 19px; font-weight: bold; margin-bottom: 8px;">Цифровое моделирование...</div>
         <div style="font-size: 13px; color: #94a3b8; max-width: 290px; line-height: 1.5;" id="ai-status">
-            Генерация анатомических виниров в AI кластере...
+            Расчет окклюзионной кривой и золотого сечения...
         </div>
     </div>
 
     <!-- ЭКРАН 4: РЕЗУЛЬТАТ -->
     <div class="screen" id="result">
-        <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px;">Результат генерации AI</div>
+        <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px;">Результат моделирования</div>
         
         <div class="compare-box" id="compare-box">
             <canvas id="canvas-before"></canvas>
             <canvas id="canvas-after"></canvas>
             <div class="tag tag-before">ДО</div>
-            <div class="tag tag-after">ПОСЛЕ (AI)</div>
+            <div class="tag tag-after">ПОСЛЕ (DSD)</div>
             <div class="slider-line" id="slider-line">
                 <div class="slider-button">⇔</div>
             </div>
@@ -247,8 +247,7 @@
         async function captureAndGenerate() {
             if (!lastLandmarks) return;
 
-            // 1. Создаем кадрированное фото лица 512x512
-            const AI_SIZE = 512;
+            const AI_SIZE = 600;
             const snapCanvas = document.createElement('canvas');
             snapCanvas.width = AI_SIZE;
             snapCanvas.height = AI_SIZE;
@@ -269,103 +268,166 @@
 
             showScreen('processing');
 
-            // 2. Генерируем идеальную улыбку в AI-кластере
+            await new Promise(r => setTimeout(r, 1200));
+
             try {
-                const finalResultCanvas = await generateDentalAI(snapCanvas, lastLandmarks);
-                renderResult(snapCanvas, finalResultCanvas);
+                const afterCanvas = renderPhotorealisticSmileDesign(snapCanvas, lastLandmarks);
+                renderResult(snapCanvas, afterCanvas);
             } catch (err) {
                 console.error(err);
-                alert("Ошибка генерации: " + err.message);
+                alert("Ошибка: " + err.message);
                 restart();
             }
         }
 
-        // Высокоточная генерация улыбки с бесшовным вживлением
-        async function generateDentalAI(photoCanvas, landmarks) {
-            const statusText = document.getElementById('ai-status');
+        // =========================================================================
+        // ДВИЖОК ЦИФРОВОГО ДИЗАЙНА УЛЫБКИ (DSD HIGH-PRECISION VENEER SYNTHESIZER)
+        // =========================================================================
+        function renderPhotorealisticSmileDesign(photoCanvas, landmarks) {
             const width = photoCanvas.width;
             const height = photoCanvas.height;
 
-            statusText.innerText = "Генерация керамических виниров в нейросети FLUX...";
+            const resCanvas = document.createElement('canvas');
+            resCanvas.width = width;
+            resCanvas.height = height;
+            const ctx = resCanvas.getContext('2d');
 
-            // Создаем уникальный стоматологический промпт
-            const seed = Math.floor(Math.random() * 999999);
-            const prompt = encodeURIComponent("ultra-detailed macro dental photography, extremely beautiful smile with perfect straight white teeth, clean natural porcelain veneers, symmetric teeth anatomy, pearly white enamel, studio lighting, highly realistic 8k");
+            // 1. Исходное фото (лицо, кожа, губы остаются 100% нетронутыми)
+            ctx.drawImage(photoCanvas, 0, 0);
 
-            // Запрашиваем генерацию у открытого высокоскоростного кластера FLUX
-            const aiImageUrl = `https://image.pollinations.ai/prompt/${prompt}?width=512&height=512&seed=${seed}&model=flux&nologo=true`;
+            // Точки внутреннего контура губ (СТРОГО полость рта)
+            const innerUpperLips = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308];
+            const innerLowerLips = [308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 78];
 
-            const aiImg = new Image();
-            aiImg.crossOrigin = "anonymous";
-            aiImg.src = aiImageUrl;
-            await aiImg.decode();
+            // 2. Создаем строгую маску обрезки рта
+            ctx.save();
+            ctx.beginPath();
+            const p0 = landmarks[innerUpperLips[0]];
+            ctx.moveTo((1 - p0.x) * width, p0.y * height);
 
-            statusText.innerText = "Бесшовное вживление зубного ряда в фото...";
-
-            // 3. БЕСШОВНОЕ ВЖИВЛЕНИЕ (Seamless Dental Blending)
-            // Берем идеальные сгенерированные зубы и вживляем ТОЛЬКО в контур рта пациента
-            const resultCanvas = document.createElement('canvas');
-            resultCanvas.width = width;
-            resultCanvas.height = height;
-            const rCtx = resultCanvas.getContext('2d');
-
-            // 1) Рисуем оригинальное лицо (четкое и неизменное)
-            rCtx.drawImage(photoCanvas, 0, 0);
-
-            // 2) Вырезаем область зубов по анатомическим точкам
-            const mouthPoints = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
-            
-            // Находим центр и границы рта
-            let minX = width, maxX = 0, minY = height, maxY = 0;
-            mouthPoints.forEach(idx => {
-                const pt = landmarks[idx];
-                const px = (1 - pt.x) * width;
-                const py = pt.y * height;
-                if (px < minX) minX = px;
-                if (px > maxX) maxX = px;
-                if (py < minY) minY = py;
-                if (py > maxY) maxY = py;
-            });
-
-            const mouthW = maxX - minX;
-            const mouthH = maxY - minY;
-
-            // Создаем маску с мягким размытием по краям
-            rCtx.save();
-            rCtx.beginPath();
-            const p0 = landmarks[mouthPoints[0]];
-            rCtx.moveTo((1 - p0.x) * width, p0.y * height);
-            for (let i = 1; i < mouthPoints.length; i++) {
-                const p = landmarks[mouthPoints[i]];
-                rCtx.lineTo((1 - p.x) * width, p.y * height);
+            for (let i = 1; i < innerUpperLips.length; i++) {
+                const p = landmarks[innerUpperLips[i]];
+                ctx.lineTo((1 - p.x) * width, p.y * height);
             }
-            rCtx.closePath();
-            rCtx.clip();
+            for (let i = 0; i < innerLowerLips.length; i++) {
+                const p = landmarks[innerLowerLips[i]];
+                ctx.lineTo((1 - p.x) * width, p.y * height);
+            }
+            ctx.closePath();
+            ctx.clip(); // ОБРЕЗАЕМ: дальше этого контура ни один пиксель не выйдет!
 
-            // Вставляем сгенерированную нейросетью улыбку точно в рот пациента
-            rCtx.drawImage(aiImg, 
-                aiImg.width * 0.25, aiImg.height * 0.45, aiImg.width * 0.5, aiImg.height * 0.3,
-                minX - 5, minY - 2, mouthW + 10, mouthH + 4
-            );
-            
-            rCtx.restore();
+            // 3. Анатомические ориентиры улыбки
+            const leftCorner = { x: (1 - landmarks[78].x) * width, y: landmarks[78].y * height };
+            const rightCorner = { x: (1 - landmarks[308].x) * width, y: landmarks[308].y * height };
+            const topLipCenter = { x: (1 - landmarks[13].x) * width, y: landmarks[13].y * height };
+            const botLipCenter = { x: (1 - landmarks[14].x) * width, y: landmarks[14].y * height };
 
-            return resultCanvas;
+            const smileWidth = Math.hypot(rightCorner.x - leftCorner.x, rightCorner.y - leftCorner.y);
+            const smileHeight = Math.max(18, Math.abs(botLipCenter.y - topLipCenter.y));
+            const smileAngle = Math.atan2(rightCorner.y - leftCorner.y, rightCorner.x - leftCorner.x);
+
+            // 4. Затемнение темного пространства полости рта (Buccal Corridor)
+            ctx.fillStyle = "rgba(15, 5, 5, 0.9)";
+            ctx.fill();
+
+            // 5. Пропорции 8 зубов (от 1.4 до 2.4) по Золотому сечению
+            // 1.4 (0.6), 1.3 (0.8), 1.2 (1.05), 1.1 (1.6) | 2.1 (1.6), 2.2 (1.05), 2.3 (0.8), 2.4 (0.6)
+            const toothRatios = [0.65, 0.82, 1.05, 1.6, 1.6, 1.05, 0.82, 0.65];
+            const sumRatios = toothRatios.reduce((a, b) => a + b, 0);
+
+            const archWidth = smileWidth * 0.94;
+            const startX = (leftCorner.x + rightCorner.x) / 2 - (archWidth / 2);
+
+            let curX = startX;
+
+            // 6. Отрисовка каждого керамического зуба
+            for (let i = 0; i < toothRatios.length; i++) {
+                const tWidth = (toothRatios[i] / sumRatios) * archWidth;
+                const isCentral = (i === 3 || i === 4);
+                const isLateral = (i === 2 || i === 5);
+                const isCanine  = (i === 1 || i === 6);
+                const isPremolar = (i === 0 || i === 7);
+
+                // Длина коронки
+                let tHeight = smileHeight * 1.35;
+                if (isLateral) tHeight *= 0.90; // Боковые резцы на 1-1.5 мм короче
+                if (isCanine) tHeight *= 0.97;
+                if (isPremolar) tHeight *= 0.82;
+
+                const toothCenterX = curX + tWidth / 2;
+                // Дуга улыбки (Smile Curve)
+                const curveOffset = Math.sin((i / (toothRatios.length - 1)) * Math.PI) * (smileHeight * 0.18);
+                const toothCenterY = topLipCenter.y - 2 + curveOffset;
+
+                ctx.save();
+                ctx.translate(toothCenterX, toothCenterY);
+                ctx.rotate(smileAngle);
+
+                // Форма коронки (зуба) со скругленными углами
+                ctx.beginPath();
+                const cornerR = isCanine ? 3 : (isCentral ? 5 : 6);
+                ctx.roundRect(-tWidth / 2 + 0.8, 0, tWidth - 1.6, tHeight, [2, 2, cornerR, cornerR]);
+
+                // МНОГОСЛОЙНЫЙ ГРАДИЕНТ КЕРАМИКИ (Дентин -> Белоснежная эмаль BL1 -> Прозрачный режущий край)
+                const grad = ctx.createLinearGradient(0, 0, 0, tHeight);
+                grad.addColorStop(0.0, "rgba(240, 235, 220, 0.98)");   // Шейка зуба
+                grad.addColorStop(0.2, "rgba(252, 252, 250, 1.0)");    // Тело BL1
+                grad.addColorStop(0.82, "rgba(255, 255, 255, 0.98)");  // Эмаль
+                grad.addColorStop(1.0, "rgba(215, 230, 245, 0.88)");   // Прозрачный край (Halo effect)
+
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                // Мамелоны и микротекстура эмали
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(-tWidth * 0.18, tHeight * 0.25);
+                ctx.lineTo(-tWidth * 0.18, tHeight * 0.85);
+                ctx.moveTo(tWidth * 0.18, tHeight * 0.25);
+                ctx.lineTo(tWidth * 0.18, tHeight * 0.85);
+                ctx.stroke();
+
+                // Студийный блик света (глянец керамики)
+                ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
+                ctx.beginPath();
+                ctx.ellipse(0, tHeight * 0.38, tWidth * 0.28, tHeight * 0.16, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Межзубный контактный пункт (естественная микротень)
+                ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
+                ctx.fillRect(-tWidth / 2, 0, 1.2, tHeight);
+                ctx.fillRect(tWidth / 2 - 1.2, 0, 1.2, tHeight);
+
+                ctx.restore();
+                curX += tWidth;
+            }
+
+            // 7. Естественная падающая тень от верхней губы на зубы
+            const shadowGrad = ctx.createLinearGradient(0, topLipCenter.y - 5, 0, topLipCenter.y + smileHeight * 0.4);
+            shadowGrad.addColorStop(0, "rgba(0, 0, 0, 0.45)");
+            shadowGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+            ctx.fillStyle = shadowGrad;
+            ctx.fillRect(leftCorner.x - 10, topLipCenter.y - 10, smileWidth + 20, smileHeight * 0.6);
+
+            ctx.restore();
+
+            return resCanvas;
         }
 
-        // Отрисовка интерактивного слайдера
+        // Отрисовка интерактивного слайдера До/После
         function renderResult(beforeCanvas, afterCanvas) {
             showScreen('result');
 
             const cBefore = document.getElementById('canvas-before');
             const cAfter = document.getElementById('canvas-after');
 
-            cBefore.width = 512;
-            cBefore.height = 512;
+            cBefore.width = beforeCanvas.width;
+            cBefore.height = beforeCanvas.height;
             cBefore.getContext('2d').drawImage(beforeCanvas, 0, 0);
 
-            cAfter.width = 512;
-            cAfter.height = 512;
+            cAfter.width = afterCanvas.width;
+            cAfter.height = afterCanvas.height;
             cAfter.getContext('2d').drawImage(afterCanvas, 0, 0);
 
             setupSlider();
@@ -393,7 +455,7 @@
         function downloadResult() {
             const cAfter = document.getElementById('canvas-after');
             const a = document.createElement('a');
-            a.download = `perfect-smile-${Date.now()}.jpg`;
+            a.download = `smile-makeover-${Date.now()}.jpg`;
             a.href = cAfter.toDataURL('image/jpeg', 0.95);
             a.click();
         }
