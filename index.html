@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>AI Dental Studio — Генерация улыбки</title>
 
-    <!-- MediaPipe FaceMesh для построения маски рта -->
+    <!-- MediaPipe FaceMesh для идеального выделения области рта -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
@@ -321,16 +321,17 @@
             return maskCanvas;
         }
 
-        // Запрос к Hugging Face API Inpainting
+        // Запрос к Hugging Face API Inpainting с ПОЛНЫМ DataURI
         async function callHuggingFaceAI(photoCanvas, maskCanvas) {
             const statusText = document.getElementById('ai-status');
 
-            // Получаем чистый Base64 без префиксов data:image
-            const imageBase64 = photoCanvas.toDataURL('image/png').replace(/^data:image\/\w+;base64,/, "");
-            const maskBase64 = maskCanvas.toDataURL('image/png').replace(/^data:image\/\w+;base64,/, "");
+            // ВАЖНО: передаем полный DataURL с префиксом data:image/jpeg;base64,
+            // чтобы Python на сервере не искал несуществующий файл
+            const imageURI = photoCanvas.toDataURL('image/jpeg', 0.95);
+            const maskURI = maskCanvas.toDataURL('image/png');
 
-            // Используем проверенную официальную модель SD 2 Inpainting
-            const MODEL_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-inpainting";
+            // Проверенная модель SD Inpainting на Hugging Face
+            const MODEL_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-inpainting";
 
             let attempts = 0;
             const maxAttempts = 6;
@@ -347,18 +348,18 @@
                     method: "POST",
                     body: JSON.stringify({
                         inputs: {
-                            image: imageBase64,
-                            mask_image: maskBase64
+                            image: imageURI,
+                            mask_image: maskURI
                         },
                         parameters: {
-                            prompt: "perfect straight clean white teeth, beautiful smile, realistic natural dental anatomy, symmetrical veneers, dental photography, 8k uhd",
-                            negative_prompt: "missing teeth, empty mouth, dark mouth, crooked teeth, yellow teeth, deformed, ugly, bad anatomy, cartoon, blurry",
-                            guidance_scale: 8.0
+                            prompt: "extreme close up of beautiful mouth with perfect straight white teeth, hollywood porcelain veneers, clean natural dental anatomy, symmetric teeth, dental photography, ultra realistic 8k",
+                            negative_prompt: "toothless, missing teeth, dark empty mouth, crooked, yellow, braces, bad anatomy, deformed lips, blurry",
+                            guidance_scale: 8.5
                         }
                     })
                 });
 
-                // Если сервер спит (холодный старт)
+                // Если модель спит (холодный старт сервера)
                 if (response.status === 503) {
                     const data = await response.json();
                     const waitTime = Math.round(data.estimated_time || 15);
